@@ -138,15 +138,15 @@ async def receive_azure_devops_webhook(
         # For now, we'll just log and acknowledge receipt
         logger.info(f"Processing user story {user_story.story_id}: {user_story.title}")
         
-        # TODO: Uncomment when process_user_story is implemented
-        # result = await process_user_story(user_story)
-        # return WebhookResponse(
-        #     status="processed",
-        #     message=f"Successfully processed user story {user_story.story_id}",
-        #     details={"story_id": user_story.story_id, "test_cases_created": result.get("test_case_count", 0)}
-        # )
+        # Process the user story with LangGraph agent
+        result = await process_user_story(user_story)
+        return WebhookResponse(
+            status="processed",
+            message=f"Successfully processed user story {user_story.story_id}",
+            details={"story_id": user_story.story_id, "test_cases_created": result.get("test_case_count", 0)}
+        )
         
-        # Mock response for now
+        # Mock response if needed
         return WebhookResponse(
             status="received",
             message=f"Received user story {user_story.story_id}: {user_story.title}",
@@ -184,15 +184,15 @@ async def receive_mock_webhook(request: Request) -> WebhookResponse:
         
         logger.info(f"Processing mock user story {user_story.story_id}: {user_story.title}")
         
-        # TODO: Uncomment when process_user_story is implemented
-        # result = await process_user_story(user_story)
-        # return WebhookResponse(
-        #     status="processed",
-        #     message=f"Successfully processed mock user story {user_story.story_id}",
-        #     details={"story_id": user_story.story_id, "test_cases_created": result.get("test_case_count", 0)}
-        # )
+        # Process the user story with LangGraph agent
+        result = await process_user_story(user_story)
+        return WebhookResponse(
+            status="processed",
+            message=f"Successfully processed mock user story {user_story.story_id}",
+            details={"story_id": user_story.story_id, "test_cases_created": result.get("test_case_count", 0)}
+        )
         
-        # Mock response for now
+        # Mock response if needed
         return WebhookResponse(
             status="received",
             message=f"Received mock user story {user_story.story_id}: {user_story.title}",

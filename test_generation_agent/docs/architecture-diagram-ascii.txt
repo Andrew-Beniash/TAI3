@@ -1,0 +1,31 @@
+
++-------------------------+     +------------------------+     +---------------------+
+|                         |     |                        |     |                     |
+|  Azure DevOps           +---->+  Webhook Service       +---->+  Embedding Service  |
+|  (Service Hook)         |     |  (FastAPI App)         |     |                     |
+|                         |     |                        |     +----------+----------+
++-------------------------+     +----------+-------------+                |
+                                           |                              |
+                                           v                              v
+                             +-------------+--------------+    +----------+----------+
+                             |                            |    |                     |
+                             |  LangGraph QA Agent        |    |  Vector DB          |
+                             |                            |    |  (Weaviate/Qdrant)  |
+                             |                            |    |                     |
+                             +-------------+--------------+    +----------+----------+
+                                           |                              ^
+                                           v                              |
+                             +-------------+--------------+                |
+                             |                            |                |
+                             |  Azure DevOps Test Plans   +----------------+
+                             |  (Test Case Creation)      |
+                             |                            |
+                             +----------------------------+
+
+Flow:
+1. Azure DevOps service hook triggers on user story creation/update
+2. Webhook service receives the payload
+3. Embedding service vectorizes the user story
+4. Similar stories and test cases are retrieved from vector DB
+5. LangGraph agent uses context to generate test cases
+6. Test cases are stored in vector DB and created in Azure DevOps

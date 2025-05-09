@@ -1,175 +1,119 @@
 """
-CSV Writer utility for the QA Agent application.
-Converts test case steps to CSV format for easier import into test management tools.
+CSV generation utility for test cases.
 """
 import csv
 import io
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
-def test_case_to_csv(test_case: Dict[str, Any]) -> str:
+from app.models.data_models import TestCaseRecord
+
+def generate_csv_from_test_cases(test_cases: List[TestCaseRecord]) -> str:
     """
-    Convert a test case to CSV format.
+    Generate a CSV string from a list of test cases.
     
     Args:
-        test_case: Dictionary containing test case details
+        test_cases: List of test cases
         
     Returns:
-        String containing CSV data
+        str: CSV string
     """
+    if not test_cases:
+        return ""
+    
+    # Create a string buffer for the CSV output
     output = io.StringIO()
     writer = csv.writer(output)
     
     # Write header row
-    writer.writerow(["Step", "Description", "Expected Result"])
+    writer.writerow(["ID", "Title", "Description", "Step", "Action", "Expected Result"])
     
-    # Write steps
-    for i, step in enumerate(test_case["steps"], 1):
-        # For all steps except the last one, expected result is empty
-        if i < len(test_case["steps"]):
-            writer.writerow([step["step"], step["description"], ""])
-        else:
-            # For the last step, include the expected result
-            writer.writerow([step["step"], step["description"], test_case["expected_result"]])
+    # Write test case rows
+    for test_case in test_cases:
+        for i, step in enumerate(test_case.steps, start=1):
+            # For the first step of each test case, include the test case info
+            if i == 1:
+                writer.writerow([
+                    test_case.test_case_id or "",
+                    test_case.title,
+                    test_case.description,
+                    i,
+                    step.get("action", ""),
+                    step.get("expected", "")
+                ])
+            else:
+                # For subsequent steps, only include step info
+                writer.writerow([
+                    "",
+                    "",
+                    "",
+                    i,
+                    step.get("action", ""),
+                    step.get("expected", "")
+                ])
+        
+        # Add a blank row between test cases
+        if test_case != test_cases[-1]:
+            writer.writerow(["", "", "", "", "", ""])
     
-    return output.getvalue()
+    # Get the CSV string
+    csv_string = output.getvalue()
+    output.close()
+    
+    return csv_string
 
-def test_cases_to_csv(test_cases: List[Dict[str, Any]]) -> str:
+def generate_csv_for_single_test_case(test_case: TestCaseRecord) -> str:
     """
-    Convert multiple test cases to a single CSV file.
+    Generate a CSV string for a single test case.
     
     Args:
-        test_cases: List of dictionaries containing test case details
+        test_case: The test case
         
     Returns:
-        String containing CSV data for all test cases
+        str: CSV string
     """
+    # Create a string buffer for the CSV output
     output = io.StringIO()
     writer = csv.writer(output)
     
     # Write header row
-    writer.writerow(["Test Case ID", "Title", "Type", "Description", "Step", "Step Description", "Expected Result"])
+    writer.writerow(["Action", "Expected Result"])
     
-    # Write test cases
-    for i, tc in enumerate(test_cases, 1):
-        test_id = tc.get("test_id", f"TC{i}")
-        
-        # Write each step as a separate row
-        for j, step in enumerate(tc["steps"], 1):
-            # Only include title, type, and description in the first row of each test case
-            if j == 1:
-                title = tc["title"]
-                test_type = tc.get("test_type", "")
-                description = tc["description"]
-            else:
-                title = ""
-                test_type = ""
-                description = ""
-            
-            # Expected result only in the last step
-            expected_result = tc["expected_result"] if j == len(tc["steps"]) else ""
-            
-            writer.writerow([
-                test_id,
-                title,
-                test_type,
-                description,
-                step["step"],
-                step["description"],
-                expected_result
-            ])
+    # Write step rows
+    for step in test_case.steps:
+        writer.writerow([step.get("action", ""), step.get("expected", "")])
     
-    return output.getvalue()
+    # Get the CSV string
+    csv_string = output.getvalue()
+    output.close()
+    
+    return csv_string
 
-def markdown_to_test_case(markdown_text: str) -> Optional[Dict[str, Any]]:
+def parse_csv_to_test_case_steps(csv_string: str) -> List[Dict[str, str]]:
     """
-    Parse a markdown representation of a test case into a structured format.
+    Parse a CSV string to test case steps.
     
     Args:
-        markdown_text: Markdown text representing a test case
+        csv_string: CSV string
         
     Returns:
-        Dictionary containing parsed test case or None if parsing fails
+        List[Dict[str, str]]: List of steps
     """
-    try:
-        lines = markdown_text.strip().split('\n')
-        
-        # Extract title from first line (assumes it's a heading)
-        title = lines[0].lstrip('#').strip()
-        
-        # Find description (assumes it's between title and steps)
-        description = ""
-        steps_start_index = -1
-        
-        for i, line in enumerate(lines[1:], 1):
-            if line.strip().lower().startswith(('## steps', '## test steps', '# steps', '# test steps')):
-                steps_start_index = i
-                break
-            description += line.strip() + " "
-        
-        description = description.strip()
-        
-        if steps_start_index == -1:
-            # If steps section not found, look for numbered steps
-            for i, line in enumerate(lines[1:], 1):
-                if line.strip().startswith('1.'):
-                    steps_start_index = i
-                    break
-        
-        if steps_start_index == -1:
-            return None
-        
-        # Extract steps
-        steps = []
-        expected_result = ""
-        expected_result_found = False
-        
-        for i, line in enumerate(lines[steps_start_index:], steps_start_index):
-            line = line.strip()
-            
-            # Skip empty lines and headings
-            if not line or line.startswith('#'):
-                continue
-            
-            # Check if we've reached the expected result section
-            if line.lower().startswith(('## expected', '# expected', 'expected result')):
-                expected_result_found = True
-                continue
-            
-            if expected_result_found:
-                expected_result += line + " "
-            else:
-                # Parse step (assumes format like "1. Do something")
-                step_parts = line.split('.', 1)
-                if len(step_parts) == 2 and step_parts[0].strip().isdigit():
-                    step_num = step_parts[0].strip()
-                    step_desc = step_parts[1].strip()
-                    steps.append({"step": step_num, "description": step_desc})
-        
-        expected_result = expected_result.strip()
-        
-        # If expected result was not found in a dedicated section, use the last step
-        if not expected_result and steps:
-            last_step = steps.pop()
-            expected_result = last_step["description"]
-        
-        # Determine test type based on title or description
-        test_type = "positive"  # Default
-        text_to_check = (title + " " + description).lower()
-        
-        if any(term in text_to_check for term in ["negative", "invalid", "error", "fail", "reject"]):
-            test_type = "negative"
-        elif any(term in text_to_check for term in ["edge", "boundary", "limit", "max", "min"]):
-            test_type = "edge"
-        
-        return {
-            "title": title,
-            "description": description,
-            "steps": steps,
-            "expected_result": expected_result,
-            "test_type": test_type,
-            "test_case_text": markdown_text
-        }
+    if not csv_string:
+        return []
     
-    except Exception as e:
-        print(f"Error parsing markdown: {e}")
-        return None
+    # Create a CSV reader from the string
+    reader = csv.reader(io.StringIO(csv_string))
+    
+    # Skip the header row
+    next(reader, None)
+    
+    # Parse the steps
+    steps = []
+    for row in reader:
+        if len(row) >= 2:
+            steps.append({
+                "action": row[0].strip(),
+                "expected": row[1].strip()
+            })
+    
+    return steps

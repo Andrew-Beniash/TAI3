@@ -1,104 +1,145 @@
 """
-Prompt templates for the LangGraph QA Agent.
-These templates are used to guide the LLM in generating test cases.
-"""
-from langchain_core.prompts import PromptTemplate
-
-CONTEXT_PROMPT = """
-# CONTEXT
-You are a QA automation expert tasked with designing comprehensive test cases for user stories in a software development project.
-
-## USER STORY DETAILS
-{user_story_details}
-
-## SIMILAR USER STORIES & TEST CASES
-The following are similar user stories and their test cases from the system that might provide context:
-
-{context_examples}
+Prompt templates for the LangGraph agent's nodes.
 """
 
-TEST_CASE_GENERATION_PROMPT = """
-# TEST CASE GENERATION TASK
-Create a set of detailed test cases for the given user story. Include positive, negative, and edge case scenarios.
+# System prompt for the agent
+SYSTEM_PROMPT = """
+You are an expert QA test engineer specializing in generating comprehensive test cases from user stories.
+Your goal is to analyze user stories and create detailed, thorough test cases that cover both happy paths
+and edge cases to ensure robust testing coverage.
 
-{context}
+For each test case, you should include:
+- A clear, descriptive title
+- A detailed description of what is being tested
+- Step-by-step actions with expected results
+- Both positive scenarios (happy paths) and negative scenarios (error conditions)
+- Edge cases that might not be obvious
 
-## REQUIREMENTS
-1. Generate at least one test case for each of these types:
-   - Positive test case: Verifies the functionality works as expected with valid inputs
-   - Negative test case: Tests the system's response to invalid inputs or unauthorized actions
-   - Edge case: Tests boundary conditions or unusual scenarios
-
-2. For each test case, include:
-   - A clear, descriptive title
-   - A brief description of what the test is verifying
-   - Numbered steps with detailed actions
-   - Expected result after following all steps
-   - Test type classification (positive, negative, or edge)
-
-3. Format each test case in Markdown with these sections:
-   # Test Case Title
-   Brief description of the test case
-   
-   ## Steps
-   1. First step
-   2. Second step
-   3. ...
-   
-   ## Expected Result
-   What should happen
-
-## OUTPUT
-Generate at least 3 test cases (1 of each type) and at most 5 total.
-Do not include any explanations or additional comments, only output the test cases in the format specified.
+You should always output the test cases in a structured JSON format that is compatible with Azure DevOps.
 """
 
-RETRIEVE_CONTEXT_PROMPT = """
-# CONTEXTUAL SEARCH TASK
-Given a user story, search for similar user stories and test cases that could provide useful context for test case generation.
+# Template for presenting a user story
+USER_STORY_TEMPLATE = """
+# User Story:
+Title: {title}
 
-## USER STORY
-{user_story}
+Description:
+{description}
 
-## TASK
-1. Identify key features, functionality, and requirements in this user story
-2. Consider what types of test cases would be appropriate (positive, negative, edge cases)
-3. Determine what similar past examples would be most helpful
+"""
 
-## OUTPUT
-Return the search terms and criteria that would help find the most relevant similar user stories and test cases. Format your response as:
-```
-search_query: <a concise search query>
-story_limit: <integer between 2-5>
-test_case_limit: <integer between 3-10>
+# Template for analyzing a user story
+ANALYZE_USER_STORY_TEMPLATE = """
+# User Story Analysis Task
+
+Analyze the following user story and extract key information that would be useful for generating test cases:
+
+## User Story
+Title: {title}
+
+Description:
+{description}
+
+{similar_stories}
+
+Your task is to extract and organize the following information from this user story:
+1. Key features or functionalities mentioned
+2. User roles or personas involved
+3. Explicit and implicit acceptance criteria
+4. Potential edge cases or error conditions
+
+Return your analysis in the following JSON format:
+```json
+{{
+  "key_features": ["feature1", "feature2", ...],
+  "user_roles": ["role1", "role2", ...],
+  "acceptance_criteria": ["criterion1", "criterion2", ...],
+  "edge_cases": ["edge case1", "edge case2", ...]
+}}
 ```
 """
 
-FORMAT_TEST_CASES_PROMPT = """
-# TEST CASE FORMATTING TASK
-Format the generated test cases into both markdown and CSV formats.
+# Template for generating test cases
+GENERATE_TEST_CASES_TEMPLATE = """
+# Test Case Generation Task
 
-## GENERATED TEST CASES
-{test_cases}
+Using the analysis of the user story, generate a comprehensive set of test cases.
 
-## TASK
-1. Ensure each test case follows the required format
-2. Generate both a markdown and CSV representation for each
-3. Structure the CSV with columns: Step, Description, Expected Result
+## User Story
+Title: {title}
 
-## OUTPUT
-Return the test cases with both markdown and CSV representations. Each test case should include:
-- title
-- description
-- steps (as a list of step objects)
-- expected_result
-- test_type
-- test_case_text (markdown format)
-- test_case_csv (CSV format)
+Description:
+{description}
+
+## Analysis
+Key Features: {key_features}
+User Roles: {user_roles}
+Acceptance Criteria:
+{acceptance_criteria}
+Edge Cases:
+{edge_cases}
+
+## Similar Test Cases (for reference)
+{similar_test_cases}
+
+Your task is to generate detailed test cases that cover happy paths, error conditions, and edge cases.
+
+For each test case, include:
+1. A clear title
+2. A description of what is being tested
+3. Detailed steps with expected results
+
+Return your test cases in the following JSON format:
+```json
+[
+  {{
+    "title": "Test Case Title",
+    "description": "Detailed description of what this test case verifies",
+    "steps": [
+      {{
+        "action": "Step 1 action description",
+        "expected": "Expected result for step 1"
+      }},
+      {{
+        "action": "Step 2 action description",
+        "expected": "Expected result for step 2"
+      }}
+    ],
+    "test_case_text": "Markdown formatted test case for human readability",
+    "test_case_csv": "CSV formatted test case for export"
+  }},
+  ... additional test cases ...
+]
+```
+
+Generate at least 3-5 test cases that provide thorough coverage of the functionality, including positive scenarios, negative scenarios, and edge cases.
 """
 
-# Create prompt templates
-context_prompt_template = PromptTemplate.from_template(CONTEXT_PROMPT)
-test_case_generation_template = PromptTemplate.from_template(TEST_CASE_GENERATION_PROMPT)
-retrieve_context_template = PromptTemplate.from_template(RETRIEVE_CONTEXT_PROMPT)
-format_test_cases_template = PromptTemplate.from_template(FORMAT_TEST_CASES_PROMPT)
+# Template for formatting a test case in markdown
+TEST_CASE_MARKDOWN_TEMPLATE = """
+# {title}
+
+## Description
+{description}
+
+## Steps
+{steps}
+"""
+
+# Template for formatting test case steps in markdown
+TEST_CASE_STEP_MARKDOWN_TEMPLATE = """
+{step_number}. {action}
+   - Expected: {expected}
+"""
+
+# Template for summarizing test case generation
+SUMMARY_TEMPLATE = """
+# Test Case Generation Summary
+
+User Story: {title}
+
+Generated {test_case_count} test cases:
+{test_case_list}
+
+Test cases have been created in Azure DevOps and linked to the user story.
+"""

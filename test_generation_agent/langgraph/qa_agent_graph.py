@@ -1,232 +1,269 @@
 """
-LangGraph QA Agent Implementation.
-Defines the agent graph with nodes for retrieving context and generating test cases.
+LangGraph agent for generating test cases.
+This module contains the graph definition for the QA agent.
 """
-import json
 import logging
-from typing import Dict, List, Any, Tuple, Annotated, TypedDict
+import json
+from typing import TypedDict, List, Dict, Any, Optional, Annotated, Tuple
 
-from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.base import BaseCheckpointSaver
+# Import langgraph components
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor, ToolInvocation
+from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint import MemorySaver
 
-from app.config import OPENAI_API_KEY, LLM_MODEL, PERSISTENCE_PATH
-from app.models.agent_state import AgentState, SimilarStory, SimilarTestCase
-from app.models.data_models import UserStory, TestCase
+# Import langgraph memory saver
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+# Import LangChain components
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_openai import ChatOpenAI
+
+# Import application components
+from app.config import OPENAI_API_KEY, OPENAI_COMPLETION_MODEL
+from app.models.data_models import UserStoryRecord, TestCaseRecord
 from app.prompts.test_case_prompts import (
-    context_prompt_template, 
-    test_case_generation_template,
-    retrieve_context_template,
-    format_test_cases_template
+    SYSTEM_PROMPT,
+    USER_STORY_TEMPLATE,
+    ANALYZE_USER_STORY_TEMPLATE,
+    GENERATE_TEST_CASES_TEMPLATE
 )
-from app.utils.csv_writer import test_case_to_csv, markdown_to_test_case
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
+# Define the agent state type
+class AgentState(TypedDict):
+    """Type for the agent state."""
+    messages: List[BaseMessage]
+    user_story: UserStoryRecord
+    similar_stories: List[UserStoryRecord]
+    similar_test_cases: List[TestCaseRecord]
+    analysis: Optional[Dict[str, Any]]
+    test_cases: List[TestCaseRecord]
+
 # Initialize the LLM
-llm = ChatOpenAI(model=LLM_MODEL, api_key=OPENAI_API_KEY, temperature=0.7)
+model = ChatOpenAI(
+    model=OPENAI_COMPLETION_MODEL,
+    temperature=0.2,
+    api_key=OPENAI_API_KEY
+)
 
-def retrieve_similar_cases(state: AgentState) -> AgentState:
+# Define the nodes for the graph
+def analyze_user_story(state: AgentState) -> AgentState:
     """
-    First node in the graph. This node would normally retrieve similar cases
-    from a vector store, but for now, it just passes through the state.
-    In a real implementation, this would use a vector DB service.
+    Analyze the user story to extract key information.
+    
+    Args:
+        state: Current agent state
+        
+    Returns:
+        AgentState: Updated agent state
     """
-    logger.info("Retrieving similar cases")
-    
-    # For demonstration purposes, we're not actually retrieving from a vector store
-    # In a real implementation, this would use the vector_store service
-    
-    # Create dummy similar stories if none provided (for testing)
-    if "similar_stories" not in state or not state["similar_stories"]:
-        state["similar_stories"] = []
-    
-    # Create dummy similar test cases if none provided (for testing)
-    if "similar_test_cases" not in state or not state["similar_test_cases"]:
-        state["similar_test_cases"] = []
-    
-    return state
-
-def generate_test_cases(state: AgentState) -> AgentState:
-    """Generate test cases based on the user story and similar cases."""
-    logger.info("Generating test cases")
-    
+    # Extract user story from state
     user_story = state["user_story"]
-    similar_stories = state.get("similar_stories", [])
-    similar_test_cases = state.get("similar_test_cases", [])
     
-    # Prepare context examples string
-    context_examples = ""
+    # Format the similar stories for context
+    similar_stories_text = ""
+    for i, story in enumerate(state["similar_stories"]):
+        similar_stories_text += f"\n--- Similar User Story {i+1} ---\n"
+        similar_stories_text += f"Title: {story.title}\n"
+        similar_stories_text += f"Description: {story.description}\n"
     
-    # Format similar stories
-    if similar_stories:
-        context_examples += "### SIMILAR USER STORIES:\n\n"
-        for story in similar_stories:
-            context_examples += f"**User Story**: {story['title']}\n"
-            context_examples += f"**Description**: {story['description']}\n\n"
+    # Create prompt
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=SYSTEM_PROMPT),
+        MessagesPlaceholder(variable_name="messages"),
+        HumanMessage(content=ANALYZE_USER_STORY_TEMPLATE.format(
+            title=user_story.title,
+            description=user_story.description,
+            similar_stories=similar_stories_text
+        ))
+    ])
     
-    # Format similar test cases
-    if similar_test_cases:
-        context_examples += "### SIMILAR TEST CASES:\n\n"
-        for tc in similar_test_cases:
-            context_examples += f"**Test Case**: {tc['title']}\n"
-            context_examples += f"**Type**: {tc['test_type']}\n"
-            context_examples += f"**Steps**: {tc['test_case_text']}\n\n"
-    
-    # Format user story details
-    user_story_details = f"""
-Title: {user_story['title']}
-Description: {user_story['description']}
-"""
-    
-    # Prepare the context for test case generation
-    context = context_prompt_template.format(
-        user_story_details=user_story_details,
-        context_examples=context_examples or "No similar examples found."
+    # Get the response from the LLM
+    response = model.invoke(
+        prompt.invoke({"messages": state["messages"]})
     )
     
-    # Generate test cases using the LLM
-    prompt = test_case_generation_template.format(context=context)
-    response = llm.invoke([HumanMessage(content=prompt)])
-    
-    # Parse the generated test cases
+    # Try to parse the analysis as JSON
     try:
-        test_cases_text = response.content
-        
-        # Split the markdown text into individual test cases
-        test_case_sections = []
-        current_section = ""
-        for line in test_cases_text.split('\n'):
-            if line.startswith('# ') and current_section:  # New test case starts
-                test_case_sections.append(current_section.strip())
-                current_section = line
-            else:
-                current_section += "\n" + line
-        
-        if current_section:  # Add the last section
-            test_case_sections.append(current_section.strip())
-        
-        # Parse each test case section into a structured format
-        generated_test_cases = []
-        for tc_text in test_case_sections:
-            parsed_tc = markdown_to_test_case(tc_text)
-            if parsed_tc:
-                # Generate CSV format
-                parsed_tc["test_case_csv"] = test_case_to_csv(parsed_tc)
-                generated_test_cases.append(parsed_tc)
-        
-        state["generated_test_cases"] = generated_test_cases
-        
-    except Exception as e:
-        logger.error(f"Error parsing generated test cases: {e}")
-        state["error"] = f"Failed to parse generated test cases: {str(e)}"
+        analysis = json.loads(response.content)
+    except json.JSONDecodeError:
+        logger.error(f"Failed to parse analysis as JSON: {response.content}")
+        analysis = {
+            "key_features": [],
+            "user_roles": [],
+            "acceptance_criteria": [],
+            "edge_cases": []
+        }
     
-    return state
+    # Add the messages to the state
+    messages = state["messages"] + [
+        HumanMessage(content=f"Please analyze this user story: {user_story.title}"),
+        response
+    ]
+    
+    # Return the updated state
+    return {
+        **state,
+        "messages": messages,
+        "analysis": analysis
+    }
 
-def format_output(state: AgentState) -> AgentState:
-    """Format the test cases for output."""
-    logger.info("Formatting output")
+def generate_test_cases(state: AgentState) -> AgentState:
+    """
+    Generate test cases based on the analysis.
     
+    Args:
+        state: Current agent state
+        
+    Returns:
+        AgentState: Updated agent state
+    """
+    # Extract information from state
     user_story = state["user_story"]
-    generated_test_cases = state.get("generated_test_cases", [])
+    analysis = state["analysis"]
     
-    # If there are no generated test cases or there was an error, return the state as is
-    if not generated_test_cases or "error" in state:
-        return state
+    # Format the similar test cases for context
+    similar_test_cases_text = ""
+    for i, test_case in enumerate(state["similar_test_cases"]):
+        similar_test_cases_text += f"\n--- Similar Test Case {i+1} ---\n"
+        similar_test_cases_text += f"Title: {test_case.title}\n"
+        similar_test_cases_text += f"Description: {test_case.description}\n"
+        similar_test_cases_text += f"Steps:\n"
+        
+        for j, step in enumerate(test_case.steps, start=1):
+            similar_test_cases_text += f"  {j}. {step.get('action', '')}\n"
+            similar_test_cases_text += f"     Expected: {step.get('expected', '')}\n"
     
-    # For each test case, ensure it has all required fields
-    for tc in generated_test_cases:
-        if "test_case_csv" not in tc:
-            tc["test_case_csv"] = test_case_to_csv(tc)
+    # Create prompt
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=SYSTEM_PROMPT),
+        MessagesPlaceholder(variable_name="messages"),
+        HumanMessage(content=GENERATE_TEST_CASES_TEMPLATE.format(
+            title=user_story.title,
+            description=user_story.description,
+            key_features=", ".join(analysis.get("key_features", [])),
+            user_roles=", ".join(analysis.get("user_roles", [])),
+            acceptance_criteria="\n".join([f"- {ac}" for ac in analysis.get("acceptance_criteria", [])]),
+            edge_cases="\n".join([f"- {ec}" for ec in analysis.get("edge_cases", [])]),
+            similar_test_cases=similar_test_cases_text
+        ))
+    ])
     
-    return state
+    # Get the response from the LLM
+    response = model.invoke(
+        prompt.invoke({"messages": state["messages"]})
+    )
+    
+    # Try to parse the test cases as JSON
+    try:
+        test_cases_json = json.loads(response.content)
+        
+        # Convert the JSON to TestCaseRecord objects
+        test_cases = []
+        for tc in test_cases_json:
+            test_cases.append(TestCaseRecord(
+                story_id=user_story.story_id,
+                title=tc.get("title", ""),
+                description=tc.get("description", ""),
+                steps=tc.get("steps", []),
+                test_case_text=tc.get("test_case_text", ""),
+                test_case_csv=tc.get("test_case_csv", "")
+            ))
+    except json.JSONDecodeError:
+        logger.error(f"Failed to parse test cases as JSON: {response.content}")
+        test_cases = []
+    
+    # Add the messages to the state
+    messages = state["messages"] + [
+        HumanMessage(content="Please generate test cases based on the analysis."),
+        response
+    ]
+    
+    # Return the updated state
+    return {
+        **state,
+        "messages": messages,
+        "test_cases": test_cases
+    }
 
-def create_agent() -> StateGraph:
-    """Create the LangGraph agent with all nodes."""
-    # Define the agent state structure
+# Define the graph
+def create_agent_graph():
+    """
+    Create the LangGraph agent graph.
+    
+    Returns:
+        StateGraph: The agent graph
+    """
     graph = StateGraph(AgentState)
     
-    # Add nodes to the graph
-    graph.add_node("retrieve_similar_cases", retrieve_similar_cases)
+    # Add nodes
+    graph.add_node("analyze_user_story", analyze_user_story)
     graph.add_node("generate_test_cases", generate_test_cases)
-    graph.add_node("format_output", format_output)
     
-    # Define the edges between nodes
-    graph.add_edge("retrieve_similar_cases", "generate_test_cases")
-    graph.add_edge("generate_test_cases", "format_output")
-    graph.add_edge("format_output", END)
+    # Add edges
+    graph.add_edge("analyze_user_story", "generate_test_cases")
+    graph.add_edge("generate_test_cases", END)
     
     # Set the entry point
-    graph.set_entry_point("retrieve_similar_cases")
+    graph.set_entry_point("analyze_user_story")
     
     # Compile the graph
     return graph.compile()
 
-class TestCaseGenerator:
-    """Main class for generating test cases from user stories."""
+# Create a memory-based checkpoint saver
+memory_saver = MemorySaver()
+
+# Create the graph with a memory saver
+qa_agent_graph = create_agent_graph()
+
+# Initialize the graph with a checkpoint
+qa_agent_app = qa_agent_graph.with_checkpointer(memory_saver)
+
+# Function to process a new user story
+async def process_user_story_with_langgraph(
+    user_story: UserStoryRecord,
+    similar_stories: List[UserStoryRecord],
+    similar_test_cases: List[TestCaseRecord]
+) -> Tuple[List[TestCaseRecord], str]:
+    """
+    Process a user story with the LangGraph agent.
     
-    def __init__(self):
-        """Initialize the test case generator with an agent and vector store."""
-        self.agent = create_agent()
+    Args:
+        user_story: The user story to process
+        similar_stories: Similar user stories for context
+        similar_test_cases: Similar test cases for context
+        
+    Returns:
+        Tuple[List[TestCaseRecord], str]: Generated test cases and summary
+    """
+    # Initialize the state
+    initial_state = AgentState(
+        messages=[],
+        user_story=user_story,
+        similar_stories=similar_stories,
+        similar_test_cases=similar_test_cases,
+        analysis=None,
+        test_cases=[]
+    )
     
-    async def generate_test_cases(
-        self, 
-        user_story: UserStory,
-        similar_stories: List[SimilarStory] = None,
-        similar_test_cases: List[SimilarTestCase] = None
-    ) -> Tuple[List[TestCase], str]:
-        """
-        Generate test cases for a user story.
-        
-        Args:
-            user_story: The user story to generate test cases for
-            similar_stories: Optional list of similar user stories
-            similar_test_cases: Optional list of similar test cases
+    # Execute the graph
+    for event in qa_agent_app.stream(initial_state):
+        if event["event"] == "start":
+            logger.info(f"Starting LangGraph agent for user story {user_story.story_id}")
+        elif event["event"] == "end":
+            final_state = event["state"]
             
-        Returns:
-            Tuple of (list of test cases, message)
-        """
-        # Prepare the initial state
-        initial_state: AgentState = {
-            "user_story": {
-                "story_id": user_story.story_id,
-                "title": user_story.title,
-                "description": user_story.description
-            },
-            "similar_stories": similar_stories or [],
-            "similar_test_cases": similar_test_cases or [],
-            "generated_test_cases": [],
-            "error": None
-        }
-        
-        # Run the agent
-        try:
-            final_state = await self.agent.ainvoke(initial_state)
+            # Extract the test cases
+            test_cases = final_state["test_cases"]
             
-            # Check for errors
-            if final_state.get("error"):
-                return [], final_state["error"]
+            # Create a summary
+            summary = f"Generated {len(test_cases)} test cases for user story: {user_story.title}"
             
-            # Convert generated test cases to TestCase objects
-            test_cases = []
-            for tc in final_state.get("generated_test_cases", []):
-                test_case = TestCase(
-                    story_id=user_story.story_id,
-                    title=tc["title"],
-                    description=tc["description"],
-                    steps=tc["steps"],
-                    expected_result=tc["expected_result"],
-                    test_type=tc["test_type"],
-                    test_case_text=tc["test_case_text"],
-                    test_case_csv=tc["test_case_csv"]
-                )
-                test_cases.append(test_case)
-            
-            return test_cases, "Test cases generated successfully"
-            
-        except Exception as e:
-            logger.error(f"Error generating test cases: {e}")
-            return [], f"Failed to generate test cases: {str(e)}"
+            return test_cases, summary
+    
+    # If we reached here, something went wrong
+    logger.error(f"LangGraph agent did not complete for user story {user_story.story_id}")
+    return [], "Error: LangGraph agent did not complete"

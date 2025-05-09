@@ -1,91 +1,63 @@
----
+# Weaviate Schema Configuration
 classes:
   - class: UserStory
     description: User story from Azure DevOps
-    vectorizer: none  # We'll provide our own vectors
+    vectorizer: none  # We provide embeddings directly
     properties:
       - name: story_id
-        dataType: string
-        description: Unique ID of the user story
-        indexFilterable: true
-        indexSearchable: true
-        tokenization: field
+        dataType: 
+          - string
+        description: The ID of the user story in Azure DevOps
       - name: project_id
-        dataType: string
-        description: ID of the project
-        indexFilterable: true
-        indexSearchable: true
-        tokenization: field
+        dataType:
+          - string
+        description: The ID of the project in Azure DevOps
       - name: title
-        dataType: text
-        description: Title of the user story
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - text
+        description: The title of the user story
       - name: description
-        dataType: text
-        description: Description of the user story
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - text
+        description: The description of the user story
       - name: created_at
-        dataType: date
-        description: Creation timestamp
-        indexFilterable: true
-        indexSearchable: true
-  
+        dataType:
+          - date
+        description: The creation date of the user story
+
   - class: TestCase
     description: Test case generated for a user story
-    vectorizer: none  # We'll provide our own vectors
+    vectorizer: none  # We provide embeddings directly
     properties:
-      - name: test_id
-        dataType: string
-        description: Unique ID of the test case
-        indexFilterable: true
-        indexSearchable: true
-        tokenization: field
       - name: story_id
-        dataType: string
-        description: ID of the user story this test case is for
-        indexFilterable: true
-        indexSearchable: true
-        tokenization: field
+        dataType: 
+          - string
+        description: The ID of the user story this test case belongs to
+      - name: test_case_id
+        dataType:
+          - string
+        description: The ID of the test case in Azure DevOps
       - name: title
-        dataType: text
-        description: Title of the test case
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - text
+        description: The title of the test case
       - name: description
-        dataType: text
-        description: Description of the test case
-        indexFilterable: true
-        indexSearchable: true
-      - name: steps
-        dataType: string
-        description: JSON string of test case steps
-        indexFilterable: true
-        indexSearchable: true
-      - name: expected_result
-        dataType: text
-        description: Expected result of the test case
-        indexFilterable: true
-        indexSearchable: true
-      - name: test_type
-        dataType: string
-        description: Type of test (positive, negative, edge)
-        indexFilterable: true
-        indexSearchable: true
-        tokenization: field
+        dataType:
+          - text
+        description: The description of the test case
       - name: test_case_text
-        dataType: text
-        description: Full test case in text/markdown format
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - text
+        description: Markdown representation of the test case
       - name: test_case_csv
-        dataType: text
-        description: Test case in CSV format
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - text
+        description: CSV representation of the test case
+      - name: steps
+        dataType:
+          - text[]
+        description: JSON string array of steps with action and expected result
       - name: generated_at
-        dataType: date
-        description: Generation timestamp
-        indexFilterable: true
-        indexSearchable: true
+        dataType:
+          - date
+        description: The generation date of the test case
