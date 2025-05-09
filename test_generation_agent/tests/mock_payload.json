@@ -1,0 +1,56 @@
+{
+  "subscriptionId": "12345678-1234-1234-1234-123456789012",
+  "notificationId": 1,
+  "id": "12345678-1234-1234-1234-123456789012",
+  "eventType": "workitem.created",
+  "publisherId": "tfs",
+  "message": {
+    "text": "User Story #123 (As a user, I want to log in with my credentials so that I can access my account) created by John Doe"
+  },
+  "detailedMessage": {
+    "text": "User Story #123 (As a user, I want to log in with my credentials so that I can access my account) created by John Doe"
+  },
+  "resource": {
+    "id": 123,
+    "rev": 1,
+    "fields": {
+      "System.Id": 123,
+      "System.Title": "As a user, I want to log in with my credentials so that I can access my account",
+      "System.Description": "<div>As a registered user, I need to be able to log in to the system using my email address and password to access my personal account and settings.</div><div><br></div><div><b>Acceptance Criteria:</b></div><div>1. User can enter email and password on the login page</div><div>2. System validates credentials against the database</div><div>3. On successful login, user is redirected to their dashboard</div><div>4. On failed login, user sees an appropriate error message</div><div>5. System provides a 'Forgot Password' option</div><div>6. Login attempts are logged for security monitoring</div>",
+      "System.State": "New",
+      "System.CreatedBy": {
+        "displayName": "John Doe",
+        "url": "https://dev.azure.com/fabrikam/_apis/Identities/12345678-1234-1234-1234-123456789012",
+        "id": "12345678-1234-1234-1234-123456789012",
+        "uniqueName": "john.doe@example.com",
+        "imageUrl": "https://dev.azure.com/fabrikam/_api/_common/identityImage?id=12345678-1234-1234-1234-123456789012"
+      },
+      "System.ChangedBy": {
+        "displayName": "John Doe",
+        "url": "https://dev.azure.com/fabrikam/_apis/Identities/12345678-1234-1234-1234-123456789012",
+        "id": "12345678-1234-1234-1234-123456789012",
+        "uniqueName": "john.doe@example.com",
+        "imageUrl": "https://dev.azure.com/fabrikam/_api/_common/identityImage?id=12345678-1234-1234-1234-123456789012"
+      },
+      "System.CreatedDate": "2023-03-01T12:00:00Z",
+      "System.ChangedDate": "2023-03-01T12:00:00Z",
+      "Microsoft.VSTS.Common.Priority": 2
+    },
+    "url": "https://dev.azure.com/fabrikam/_apis/wit/workItems/123",
+    "projectId": "12345678-1234-1234-1234-123456789012",
+    "workItemType": "User Story"
+  },
+  "resourceVersion": "1.0",
+  "resourceContainers": {
+    "collection": {
+      "id": "12345678-1234-1234-1234-123456789012"
+    },
+    "account": {
+      "id": "12345678-1234-1234-1234-123456789012"
+    },
+    "project": {
+      "id": "12345678-1234-1234-1234-123456789012"
+    }
+  },
+  "createdDate": "2023-03-01T12:00:00Z"
+}
