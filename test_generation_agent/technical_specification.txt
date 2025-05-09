@@ -1,0 +1,112 @@
+Title: Integration of LangGraph QA Agent with Azure DevOps and Vector Database for Context-Aware Test Case Generation
+
+Objective:
+Automate the generation of detailed, context-aware QA test cases for user stories created in Azure DevOps by integrating a LangGraph-based agent with Azure DevOps service hooks and a vector database (e.g., Weaviate or Qdrant). The system will store all user stories and corresponding test cases as vector embeddings and use them to enrich test generation for future stories.
+
+⸻
+
+1. System Components
+
+1.1 Azure DevOps Service Hook
+	•	Triggered on user story creation or update.
+	•	Sends an HTTP POST payload to a predefined webhook endpoint.
+	•	Payload includes: user story ID, title, description, project metadata.
+
+1.2 Webhook Service (API Layer)
+	•	Receives POST requests from Azure DevOps.
+	•	Parses and validates payload.
+	•	Calls embedding service to vectorize the user story.
+	•	Queries the vector store for similar stories and test cases (top 3–5).
+	•	Combines the new story with retrieved context and invokes the LangGraph agent.
+	•	Saves the results (test cases and their embedding) back into the vector store and creates test cases in Azure DevOps using the Test Plans API, linked to the originating user story.
+
+1.3 LangGraph QA Agent
+	•	Enhanced with a retrieve_similar_cases node as entry point.
+	•	Consumes both new story and semantically similar past examples.
+	•	Generates detailed test cases with edge, negative, and positive scenarios.
+	•	Returns both markdown and CSV format of test cases.
+	•	Outputs structured test case objects that are compatible with Azure DevOps Test Plans API format for direct creation.
+
+1.4 Vector Store (Weaviate / Qdrant / FAISS)
+	•	Stores vector embeddings for user stories and test cases.
+	•	Indexed by story ID, project ID, date, and custom tags.
+	•	Supports similarity search using cosine distance or dot product.
+	•	Deployed as managed cloud instance or self-hosted service.
+
+1.5 Embedding Service
+	•	Uses OpenAI (e.g., text-embedding-3-small) or Sentence Transformers.
+	•	Vectorizes both the new input and indexed documents.
+	•	Exposes a simple embedding API (optional abstraction layer).
+
+⸻
+
+2. Data Model
+
+UserStoryRecord
+	•	story_id: str
+	•	project_id: str
+	•	title: str
+	•	description: str
+	•	embedding: List[float]
+	•	created_at: datetime
+
+TestCaseRecord
+	•	story_id: str
+	•	test_case_text: str
+	•	test_case_csv: str
+	•	embedding: List[float]
+	•	generated_at: datetime
+
+⸻
+
+3. Deployment Architecture
+	•	Azure DevOps → Webhook/API (FastAPI or Flask)
+→ Embedding Service → Vector DB (Weaviate/Qdrant)
+→ LangGraph Agent → Vector DB + Azure DevOps Test Plans API (linked to the user story)
+	•	Host API and Agent backend on Azure Functions, Azure App Service, or containerized in Azure Container Apps.
+	•	Secure endpoints using Azure AD or API keys.
+
+⸻
+
+4. Enhancements and Considerations
+	•	Implement retry logic and dead-letter queue for failed webhook calls.
+	•	Include human-in-the-loop review for test cases (with feedback stored).
+	•	Track generation performance and maintain logs in Azure Application Insights.
+	•	Add LangGraph checkpoint persistence in Azure Blob Storage (instead of SQLite).
+	•	Ensure GDPR compliance for stored user data in vector DB (if applicable).
+	•	Use Azure DevOps Test Plans API to programmatically create test cases and link them to user stories using `WorkItemLinks` and `TestPoint` entities.
+
+qa-agent-project/
+├── app/
+│   ├── main.py                  # FastAPI/Flask entry point (webhook receiver)
+│   ├── config.py                # Env var loading, secrets, model config
+│   ├── routes/
+│   │   └── webhook.py           # POST handler for Azure DevOps webhook
+│   ├── services/
+│   │   ├── langgraph_runner.py  # LangGraph agent invocation logic
+│   │   ├── embedding.py         # Embedding model wrapper
+│   │   ├── vector_store.py      # Interface to Weaviate or Qdrant
+│   │   └── azure_devops.py      # Handles story comments and test case creation using Azure DevOps REST APIs
+│   ├── models/
+│   │   ├── agent_state.py       # TypedDict for LangGraph agent state
+│   │   └── data_models.py       # Pydantic models for request/response
+│   ├── prompts/
+│   │   └── test_case_prompts.py # Prompt templates used in LangGraph nodes
+│   └── utils/
+│       └── csv_writer.py        # CSV generation from agent output
+│
+├── langgraph/
+│   └── qa_agent_graph.py        # Full LangGraph agent with all nodes
+│
+├── vector_db/
+│   └── schema.yaml              # Optional: schema config for Weaviate/Qdrant
+│
+├── tests/
+│   ├── test_langgraph.py
+│   ├── test_embedding.py
+│   └── test_vector_store.py
+│
+├── requirements.txt
+├── .env
+├── README.md
+└── run_local.sh                 # Script for local dev/testing

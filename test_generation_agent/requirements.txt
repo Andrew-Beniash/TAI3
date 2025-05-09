@@ -1,0 +1,14 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+langchain==0.1.4
+langchain-openai==0.0.5
+langgraph==0.0.24
+pydantic==2.5.3
+python-dotenv==1.0.0
+requests==2.31.0
+azure-devops==7.1.0b3
+weaviate-client==3.25.3
+python-multipart==0.0.6
+transformers==4.36.2
+sentence-transformers==2.2.2
+pytest==7.4.3

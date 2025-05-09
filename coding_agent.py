@@ -48,7 +48,7 @@ def main():
     print(documented_code)
 
     # Step 3: Ask to add test cases
-    print("\n🧪 Adding unit tests using unittest...")
+    print("\n Adding unit tests using unittest...")
     test_prompt = (
         "Now please write Python unittest test cases for the following function. "
         "Include tests for basic functionality, edge cases, error conditions, and varying input scenarios.\n\n"

@@ -1,0 +1,42 @@
+version: '3.4'
+services:
+  # Weaviate vector database service
+  weaviate:
+    image: semitechnologies/weaviate:1.19.6
+    ports:
+      - "8080:8080"
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 20
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: './data'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - ./weaviate_data:/var/lib/weaviate
+
+  # Qdrant vector database service (alternative)
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      
+  # API service
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - weaviate
+      - qdrant
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

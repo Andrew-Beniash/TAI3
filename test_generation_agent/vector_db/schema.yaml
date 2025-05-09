@@ -1,0 +1,91 @@
+---
+classes:
+  - class: UserStory
+    description: User story from Azure DevOps
+    vectorizer: none  # We'll provide our own vectors
+    properties:
+      - name: story_id
+        dataType: string
+        description: Unique ID of the user story
+        indexFilterable: true
+        indexSearchable: true
+        tokenization: field
+      - name: project_id
+        dataType: string
+        description: ID of the project
+        indexFilterable: true
+        indexSearchable: true
+        tokenization: field
+      - name: title
+        dataType: text
+        description: Title of the user story
+        indexFilterable: true
+        indexSearchable: true
+      - name: description
+        dataType: text
+        description: Description of the user story
+        indexFilterable: true
+        indexSearchable: true
+      - name: created_at
+        dataType: date
+        description: Creation timestamp
+        indexFilterable: true
+        indexSearchable: true
+  
+  - class: TestCase
+    description: Test case generated for a user story
+    vectorizer: none  # We'll provide our own vectors
+    properties:
+      - name: test_id
+        dataType: string
+        description: Unique ID of the test case
+        indexFilterable: true
+        indexSearchable: true
+        tokenization: field
+      - name: story_id
+        dataType: string
+        description: ID of the user story this test case is for
+        indexFilterable: true
+        indexSearchable: true
+        tokenization: field
+      - name: title
+        dataType: text
+        description: Title of the test case
+        indexFilterable: true
+        indexSearchable: true
+      - name: description
+        dataType: text
+        description: Description of the test case
+        indexFilterable: true
+        indexSearchable: true
+      - name: steps
+        dataType: string
+        description: JSON string of test case steps
+        indexFilterable: true
+        indexSearchable: true
+      - name: expected_result
+        dataType: text
+        description: Expected result of the test case
+        indexFilterable: true
+        indexSearchable: true
+      - name: test_type
+        dataType: string
+        description: Type of test (positive, negative, edge)
+        indexFilterable: true
+        indexSearchable: true
+        tokenization: field
+      - name: test_case_text
+        dataType: text
+        description: Full test case in text/markdown format
+        indexFilterable: true
+        indexSearchable: true
+      - name: test_case_csv
+        dataType: text
+        description: Test case in CSV format
+        indexFilterable: true
+        indexSearchable: true
+      - name: generated_at
+        dataType: date
+        description: Generation timestamp
+        indexFilterable: true
+        indexSearchable: true
