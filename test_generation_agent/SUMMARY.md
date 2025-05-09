@@ -24,8 +24,10 @@ We have successfully implemented a FastAPI webhook receiver for Azure DevOps tha
 
 ### Azure DevOps Integration
 - **Test case creation** - Programmatically creates test cases in Azure DevOps
-- **Work item linking** - Links test cases to originating user stories
-- **Comment functionality** - Adds comments to user stories
+- **Work item linking** - Links test cases to originating user stories using WorkItemRelation
+- **Test Plans API integration** - Creates and manages test plans and test suites
+- **Authentication** - Supports Personal Access Token and Azure AD App authentication
+- **Error handling** - Comprehensive error handling for robust API interactions
 
 ### Utilities
 - **CSV generation** - Formats test cases as CSV for export
@@ -40,6 +42,7 @@ We have successfully implemented a FastAPI webhook receiver for Azure DevOps tha
 - **README** - Comprehensive project documentation
 - **Example scripts** - Demonstrate individual component usage
 - **Architecture diagram** - Visual representation of the system
+- **Azure DevOps Integration Guide** - Detailed documentation on Azure DevOps integration
 - **Docker configuration** - For containerized deployment
 
 ## Development Setup
@@ -49,10 +52,13 @@ We have successfully implemented a FastAPI webhook receiver for Azure DevOps tha
 
 ## Next Steps
 1. **Complete LangGraph implementation** - Further refine the agent nodes and logic
-2. **Enhance Azure DevOps integration** - Add more test case management features
+2. **Enhance Azure DevOps integration** - Add test results tracking and more test management features
 3. **Implement feedback loop** - Incorporate user feedback to improve test generation
 4. **Add monitoring and logging** - For production deployment
 5. **User interface** - Consider adding a simple dashboard for monitoring
 
+## Detailed Documentation
+- [Azure DevOps Integration](docs/azure_devops_integration.md) - Detailed guide on the Azure DevOps API integration
+
 ## Conclusion
-This implementation provides a solid foundation for automating test case generation from user stories. The modular architecture allows for easy extension and customization, while the vector database integration enables context-aware test generation that improves over time.
+This implementation provides a solid foundation for automating test case generation from user stories. The modular architecture allows for easy extension and customization, while the vector database integration enables context-aware test generation that improves over time. The comprehensive Azure DevOps integration allows for seamless creation and management of test cases directly in Azure DevOps, linked to their originating user stories.

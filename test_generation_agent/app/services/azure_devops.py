@@ -1,278 +1,303 @@
 """
-Azure DevOps integration service.
-Handles interactions with Azure DevOps API for retrieving user stories and creating test cases.
+Azure DevOps service integration.
+Handles communication with Azure DevOps APIs for test case creation and linking.
 """
 import logging
 import base64
-from typing import Dict, Any, List, Optional
-import asyncio
-import re
+import requests
+from typing import Dict, List, Optional, Any, Union
 
-from app.config import get_azure_devops_credentials
-from app.models.data_models import TestCaseRecord
+from ..config import (
+    AZURE_DEVOPS_ORG,
+    AZURE_DEVOPS_PROJECT,
+    AZURE_DEVOPS_PAT,
+    AZURE_DEVOPS_API_VERSION
+)
+from ..models.data_models import TestCaseRecord
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Try to import Azure DevOps client
-try:
-    from azure.devops.connection import Connection
-    from azure.devops.v6_0.work_item_tracking import WorkItemTrackingClient
-    from azure.devops.v6_0.test import TestClient
-    from msrest.authentication import BasicAuthentication
+class AzureDevOpsService:
+    """Service class for interacting with Azure DevOps APIs."""
     
-    # Get Azure DevOps credentials
-    credentials = get_azure_devops_credentials()
-    
-    # Set up authentication
-    personal_access_token = credentials.get("personal_access_token", "")
-    organization_url = f"https://dev.azure.com/{credentials.get('organization', '')}"
-    project = credentials.get("project", "")
-    
-    # Check if credentials are configured
-    if personal_access_token and organization_url != "https://dev.azure.com/":
-        # Create a connection to Azure DevOps
-        credentials = BasicAuthentication('', personal_access_token)
-        connection = Connection(base_url=organization_url, creds=credentials)
+    def __init__(self, org=None, project=None, pat=None, api_version=None):
+        """Initialize the Azure DevOps service.
         
-        # Get clients
-        work_item_client = connection.clients.get_work_item_tracking_client()
-        test_client = connection.clients.get_test_client()
-        
-        logger.info(f"Azure DevOps clients initialized for organization: {credentials.get('organization', '')}")
-    else:
-        logger.warning("Azure DevOps credentials not configured. Integration will not be available.")
-        work_item_client = None
-        test_client = None
-        
-except ImportError:
-    logger.error("Azure DevOps SDK not installed. Please install with 'pip install azure-devops'")
-    work_item_client = None
-    test_client = None
-except Exception as e:
-    logger.error(f"Error initializing Azure DevOps client: {e}", exc_info=True)
-    work_item_client = None
-    test_client = None
-
-async def get_user_story(story_id: str) -> Dict[str, Any]:
-    """
-    Get a user story from Azure DevOps.
-    
-    Args:
-        story_id: The ID of the user story
-        
-    Returns:
-        Dict[str, Any]: The user story data
-    """
-    if not work_item_client:
-        logger.error("Azure DevOps client not initialized")
-        return {}
-        
-    try:
-        # Run the operation in a thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        work_item = await loop.run_in_executor(
-            None, 
-            lambda: work_item_client.get_work_item(int(story_id))
-        )
-        
-        # Extract the relevant fields
-        return {
-            "id": work_item.id,
-            "title": work_item.fields.get("System.Title", ""),
-            "description": work_item.fields.get("System.Description", ""),
-            "state": work_item.fields.get("System.State", ""),
-            "created_by": work_item.fields.get("System.CreatedBy", ""),
-            "created_date": work_item.fields.get("System.CreatedDate", ""),
-            "work_item_type": work_item.fields.get("System.WorkItemType", "")
-        }
-    except Exception as e:
-        logger.error(f"Error getting user story {story_id}: {e}", exc_info=True)
-        return {}
-
-async def create_test_cases_in_azure_devops(
-    story_id: str, 
-    test_cases: List[TestCaseRecord]
-) -> Dict[str, Any]:
-    """
-    Create test cases in Azure DevOps and link them to the user story.
-    
-    Args:
-        story_id: The ID of the user story
-        test_cases: List of test cases to create
-        
-    Returns:
-        Dict[str, Any]: Result of the operation
-    """
-    if not work_item_client:
-        logger.error("Azure DevOps client not initialized")
-        return {"error": "Azure DevOps client not initialized"}
-        
-    if not test_cases:
-        logger.warning("No test cases to create")
-        return {"created_test_cases": 0, "test_case_ids": []}
-        
-    try:
-        created_test_cases = []
-        
-        # Get Azure DevOps project and credentials
-        credentials = get_azure_devops_credentials()
-        project = credentials.get("project", "")
-        
-        # Create each test case
-        for test_case in test_cases:
-            # Prepare the fields for the test case
-            fields = {
-                "System.Title": test_case.title,
-                "System.Description": test_case.description,
-                "System.WorkItemType": "Test Case",
-                "System.Tags": "generated,ai",
-                "Microsoft.VSTS.TCM.Steps": _format_steps_for_azure_devops(test_case.steps)
-            }
-            
-            # Create the test case
-            loop = asyncio.get_event_loop()
-            test_case_work_item = await loop.run_in_executor(
-                None,
-                lambda: work_item_client.create_work_item(
-                    document=[
-                        {"op": "add", "path": f"/fields/{field}", "value": value}
-                        for field, value in fields.items()
-                    ],
-                    project=project,
-                    type="Test Case"
-                )
-            )
-            
-            # Link the test case to the user story
-            if test_case_work_item and test_case_work_item.id:
-                # Create a link from the test case to the user story
-                await loop.run_in_executor(
-                    None,
-                    lambda: work_item_client.add_link(
-                        link_type_name="Tests",
-                        source_id=test_case_work_item.id,
-                        target_id=int(story_id)
-                    )
-                )
-                
-                # Update the test case record with the Azure DevOps ID
-                test_case.test_case_id = str(test_case_work_item.id)
-                created_test_cases.append(test_case_work_item.id)
-                
-                logger.info(f"Created test case {test_case_work_item.id}: {test_case.title}")
-        
-        return {
-            "created_test_cases": len(created_test_cases),
-            "test_case_ids": created_test_cases
-        }
-    except Exception as e:
-        logger.error(f"Error creating test cases: {e}", exc_info=True)
-        return {"error": str(e)}
-
-def _format_steps_for_azure_devops(steps: List[Dict[str, str]]) -> str:
-    """
-    Format test case steps for Azure DevOps.
-    
-    Args:
-        steps: List of steps with action and expected result
-        
-    Returns:
-        str: Formatted steps in Azure DevOps format
-    """
-    if not steps:
-        return ""
-        
-    # Format the steps as an HTML table for Azure DevOps
-    steps_html = "<steps id='0'><step id='1' type='ActionStep'>"
-    
-    for i, step in enumerate(steps, start=1):
-        action = step.get("action", "")
-        expected = step.get("expected", "")
-        
-        steps_html += f"""
-        <parameterizedString isformatted="true">
-            <text>{action}</text>
-        </parameterizedString>
-        <parameterizedString isformatted="true">
-            <text>{expected}</text>
-        </parameterizedString>
+        Args:
+            org: Azure DevOps organization name
+            project: Azure DevOps project name
+            pat: Personal Access Token
+            api_version: API version to use
         """
+        self.org = org or AZURE_DEVOPS_ORG
+        self.project = project or AZURE_DEVOPS_PROJECT
+        self.pat = pat or AZURE_DEVOPS_PAT
+        self.api_version = api_version or AZURE_DEVOPS_API_VERSION
         
-        # Add next step marker if not the last step
-        if i < len(steps):
-            steps_html += f"</step><step id='{i+1}' type='ActionStep'>"
+        if not all([self.org, self.project, self.pat]):
+            logger.error("Azure DevOps configuration is incomplete")
+            raise ValueError("Azure DevOps configuration is incomplete. Check org, project, and PAT.")
+        
+        # Base URLs for different Azure DevOps APIs
+        self.base_url = f"https://dev.azure.com/{self.org}/{self.project}"
+        self.work_item_url = f"{self.base_url}/_apis/wit/workitems"
+        self.test_plans_url = f"{self.base_url}/_apis/test/plans"
+        
+        # Create Authorization header using Personal Access Token
+        self.auth_header = self._create_auth_header(self.pat)
     
-    steps_html += "</step></steps>"
+    def _create_auth_header(self, pat: str) -> Dict[str, str]:
+        """Create the authorization header for Azure DevOps API.
+        
+        Args:
+            pat: Personal Access Token
+            
+        Returns:
+            Dictionary containing the authorization header
+        """
+        encoded_pat = base64.b64encode(f":{pat}".encode()).decode()
+        return {
+            "Authorization": f"Basic {encoded_pat}",
+            "Content-Type": "application/json"
+        }
     
-    return steps_html
-
-async def add_comment_to_user_story(story_id: str, comment: str) -> bool:
-    """
-    Add a comment to a user story in Azure DevOps.
-    
-    Args:
-        story_id: The ID of the user story
-        comment: The comment text
+    def _make_request(self, method: str, url: str, params: Dict = None, json_data: Dict = None) -> Dict:
+        """Make a request to the Azure DevOps API.
         
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not work_item_client:
-        logger.error("Azure DevOps client not initialized")
-        return False
+        Args:
+            method: HTTP method (GET, POST, PATCH, etc.)
+            url: API endpoint URL
+            params: Query parameters
+            json_data: JSON data for POST/PATCH requests
+            
+        Returns:
+            JSON response from the API
+        """
+        # Add API version to parameters
+        if params is None:
+            params = {}
+        params["api-version"] = self.api_version
         
-    try:
-        # Get Azure DevOps project and credentials
-        credentials = get_azure_devops_credentials()
-        project = credentials.get("project", "")
-        
-        # Add the comment
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: work_item_client.add_comment(
-                project=project,
-                work_item_id=int(story_id),
-                comment=comment
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=self.auth_header,
+                params=params,
+                json=json_data
             )
-        )
-        
-        logger.info(f"Added comment to user story {story_id}")
-        return True
-    except Exception as e:
-        logger.error(f"Error adding comment to user story {story_id}: {e}", exc_info=True)
-        return False
-
-async def mock_create_test_cases(
-    story_id: str, 
-    test_cases: List[TestCaseRecord]
-) -> Dict[str, Any]:
-    """
-    Mock function to simulate creation of test cases in Azure DevOps.
-    Used for local development and testing when Azure DevOps is not available.
+            response.raise_for_status()
+            
+            if response.status_code == 204:  # No content
+                return {}
+            
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error making request to Azure DevOps API: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            raise
     
-    Args:
-        story_id: The ID of the user story
-        test_cases: List of test cases to create
+    def get_work_item(self, work_item_id: int) -> Dict:
+        """Get a work item by ID.
         
-    Returns:
-        Dict[str, Any]: Mock result of the operation
-    """
-    # Simulate some processing time
-    await asyncio.sleep(0.5)
+        Args:
+            work_item_id: ID of the work item
+            
+        Returns:
+            Work item details
+        """
+        url = f"{self.work_item_url}/{work_item_id}"
+        return self._make_request("GET", url)
     
-    # Generate mock IDs for the test cases
-    test_case_ids = []
-    for i, test_case in enumerate(test_cases):
-        # Generate a mock ID
-        mock_id = f"TC-{story_id}-{i+1}"
-        test_case.test_case_id = mock_id
-        test_case_ids.append(mock_id)
+    def create_test_plan(self, name: str, description: str = "") -> Dict:
+        """Create a test plan.
         
-        logger.info(f"[MOCK] Created test case {mock_id}: {test_case.title}")
+        Args:
+            name: Name of the test plan
+            description: Description of the test plan
+            
+        Returns:
+            Created test plan details
+        """
+        data = {
+            "name": name,
+            "description": description
+        }
+        return self._make_request("POST", self.test_plans_url, json_data=data)
     
-    return {
-        "created_test_cases": len(test_cases),
-        "test_case_ids": test_case_ids
-    }
+    def create_test_suite(self, plan_id: int, name: str, suite_type: str = "staticTestSuite") -> Dict:
+        """Create a test suite within a test plan.
+        
+        Args:
+            plan_id: ID of the test plan
+            name: Name of the test suite
+            suite_type: Type of test suite (default: staticTestSuite)
+            
+        Returns:
+            Created test suite details
+        """
+        url = f"{self.test_plans_url}/{plan_id}/suites"
+        data = {
+            "name": name,
+            "suiteType": suite_type
+        }
+        return self._make_request("POST", url, json_data=data)
+    
+    def create_test_case(self, test_case: TestCaseRecord) -> Dict:
+        """Create a test case work item.
+        
+        Args:
+            test_case: Test case record to create
+            
+        Returns:
+            Created test case work item details
+        """
+        # First create the test case as a work item
+        url = f"{self.work_item_url}/$Microsoft.TestCase"
+        
+        # Prepare operations for the work item creation
+        operations = [
+            {
+                "op": "add",
+                "path": "/fields/System.Title",
+                "value": test_case.title
+            },
+            {
+                "op": "add",
+                "path": "/fields/System.Description",
+                "value": test_case.description
+            },
+            {
+                "op": "add",
+                "path": "/fields/Microsoft.VSTS.TCM.Steps",
+                "value": self._format_test_steps(test_case.steps)
+            }
+        ]
+        
+        work_item = self._make_request("PATCH", url, json_data=operations)
+        logger.info(f"Created test case work item with ID: {work_item.get('id')}")
+        
+        return work_item
+    
+    def _format_test_steps(self, steps: List[Dict[str, str]]) -> str:
+        """Format test steps into the Azure DevOps XML format.
+        
+        Args:
+            steps: List of test steps with action and expected result
+            
+        Returns:
+            Formatted XML string for test steps
+        """
+        # XML template for test steps
+        steps_xml = '<steps id="0" last="2">'
+        
+        for i, step in enumerate(steps, start=1):
+            action = step.get('action', '')
+            expected = step.get('expected', '')
+            
+            step_xml = f"""
+            <step id="{i}" type="ActionStep">
+                <parameterizedString isformatted="true">{action}</parameterizedString>
+                <parameterizedString isformatted="true">{expected}</parameterizedString>
+            </step>
+            """
+            steps_xml += step_xml
+        
+        steps_xml += '</steps>'
+        return steps_xml
+    
+    def add_test_case_to_suite(self, plan_id: int, suite_id: int, test_case_id: int) -> Dict:
+        """Add a test case to a test suite.
+        
+        Args:
+            plan_id: ID of the test plan
+            suite_id: ID of the test suite
+            test_case_id: ID of the test case
+            
+        Returns:
+            Result of adding the test case to the suite
+        """
+        url = f"{self.test_plans_url}/{plan_id}/suites/{suite_id}/testcases/{test_case_id}"
+        return self._make_request("POST", url)
+    
+    def link_work_items(self, source_id: int, target_id: int, link_type: str = "Microsoft.VSTS.Common.TestedBy-Forward") -> Dict:
+        """Link two work items together.
+        
+        Args:
+            source_id: ID of the source work item (e.g., user story)
+            target_id: ID of the target work item (e.g., test case)
+            link_type: Type of link relationship
+            
+        Returns:
+            Result of linking the work items
+        """
+        url = f"{self.work_item_url}/{source_id}"
+        
+        operations = [
+            {
+                "op": "add",
+                "path": "/relations/-",
+                "value": {
+                    "rel": link_type,
+                    "url": f"{self.work_item_url}/{target_id}"
+                }
+            }
+        ]
+        
+        return self._make_request("PATCH", url, json_data=operations)
+    
+    def create_test_cases_for_story(self, story_id: int, test_cases: List[TestCaseRecord], 
+                                    plan_name: str = None, suite_name: str = None) -> List[Dict]:
+        """Create test cases for a user story and link them together.
+        
+        Args:
+            story_id: ID of the user story
+            test_cases: List of test case records to create
+            plan_name: Name of the test plan to create or use
+            suite_name: Name of the test suite to create or use
+            
+        Returns:
+            List of created test cases
+        """
+        try:
+            # Get user story details
+            story = self.get_work_item(story_id)
+            story_title = story.get('fields', {}).get('System.Title', 'User Story')
+            
+            # Create or use test plan
+            plan_name = plan_name or f"Test Plan for {story_title}"
+            plan = self.create_test_plan(plan_name, f"Test plan for user story: {story_title}")
+            plan_id = plan.get('id')
+            
+            # Create or use test suite
+            suite_name = suite_name or f"Test Suite for {story_title}"
+            suite = self.create_test_suite(plan_id, suite_name)
+            suite_id = suite.get('id')
+            
+            created_test_cases = []
+            
+            # Create test cases and add them to the suite
+            for test_case in test_cases:
+                # Create test case work item
+                work_item = self.create_test_case(test_case)
+                test_case_id = work_item.get('id')
+                
+                # Add test case to suite
+                self.add_test_case_to_suite(plan_id, suite_id, test_case_id)
+                
+                # Link test case to user story
+                self.link_work_items(story_id, test_case_id)
+                
+                # Update test case record with Azure DevOps ID
+                test_case.test_case_id = str(test_case_id)
+                created_test_cases.append(work_item)
+                
+                logger.info(f"Created test case {test_case_id} and linked to story {story_id}")
+            
+            return created_test_cases
+        
+        except Exception as e:
+            logger.error(f"Error creating test cases for story {story_id}: {e}")
+            raise

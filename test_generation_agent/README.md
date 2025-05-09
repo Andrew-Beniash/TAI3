@@ -128,6 +128,23 @@ A Postman collection is available at `tests/Test_Generation_Agent.postman_collec
 
 ## Azure DevOps Integration
 
+### Setting Up Personal Access Token (PAT)
+
+1. In Azure DevOps, go to User Settings > Personal Access Tokens
+2. Create a new Personal Access Token with the following scopes:
+   - Work Items: Read & Write
+   - Test Management: Read & Write
+3. Copy the generated token and add it to your `.env` file as `AZURE_DEVOPS_PAT`
+
+### Setting Up Azure AD App (Alternative to PAT)
+
+For production environments, it's recommended to use Azure AD App authentication:
+
+1. Register a new application in Azure AD
+2. Set the redirect URI to your application's callback URL
+3. Grant API permissions for Azure DevOps
+4. Configure your application to use the client ID and client secret
+
 ### Setting Up Webhook
 
 1. In Azure DevOps, go to Project Settings > Service Hooks
@@ -138,6 +155,56 @@ A Postman collection is available at `tests/Test_Generation_Agent.postman_collec
    - URL: Your webhook endpoint URL (e.g., https://your-domain.com/api/v1/webhook/azure-devops)
    - Basic Authentication: If enabled, add credentials
    - Headers: Add a secret if using WEBHOOK_SECRET
+
+### Using the Azure DevOps Test Plans API
+
+The application uses the Azure DevOps Test Plans API to create and manage test cases. Here's how it works:
+
+1. When a new user story is created or updated in Azure DevOps, the webhook is triggered
+2. The application generates test cases using the LangGraph agent
+3. The test cases are created in Azure DevOps using the Test Plans API
+4. The test cases are linked to the original user story using WorkItemRelation
+
+The `AzureDevOpsService` class in `app/services/azure_devops.py` provides the following functionality:
+
+- Creating test plans and test suites
+- Creating test cases with detailed steps
+- Adding test cases to test suites
+- Linking test cases to user stories
+
+### Example Usage
+
+```python
+from app.services.azure_devops import AzureDevOpsService
+from app.models.data_models import TestCaseRecord
+
+# Initialize the Azure DevOps service
+azure_devops = AzureDevOpsService()
+
+# Create a test case record
+test_case = TestCaseRecord(
+    story_id="123",
+    title="Test Case Title",
+    description="Test case description",
+    steps=[
+        {"action": "Step 1", "expected": "Expected Result 1"},
+        {"action": "Step 2", "expected": "Expected Result 2"},
+    ],
+    test_case_text="# Test Case Title\n\n## Description\nTest case description\n\n## Steps\n1. Step 1\n   - Expected: Expected Result 1\n2. Step 2\n   - Expected: Expected Result 2"
+)
+
+# Create the test case in Azure DevOps and link it to the user story
+azure_devops.create_test_cases_for_story(123, [test_case])
+```
+
+### Running the Example
+
+An example script is provided to demonstrate the Azure DevOps integration:
+
+```bash
+# Update the user_story_id in the script first
+python examples/azure_devops_example.py
+```
 
 ## Project Structure
 
@@ -174,6 +241,9 @@ test_generation_agent/
 │
 ├── docs/
 │   └── architecture-diagram.png # Architecture diagram
+│
+├── examples/
+│   └── azure_devops_example.py  # Example script for Azure DevOps integration
 │
 ├── Dockerfile
 ├── docker-compose.yml
